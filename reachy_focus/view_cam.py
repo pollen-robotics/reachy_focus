@@ -45,6 +45,7 @@ class ImageViewer(Node):
         cv.imshow('right_image', img)
         cv.waitKey(1)
 
+
 def main():
     """Run main loop."""
     rclpy.init()
