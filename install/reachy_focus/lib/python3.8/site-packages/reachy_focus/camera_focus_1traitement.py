@@ -79,13 +79,12 @@ class CameraFocus(Node):
     def __init__(self):
         super().__init__('camera_focus')
 
-        self.zoom = 50
+        self.zoom = 350
         self.bruit = 0.4
         self.pos = 0
 
         self.Init = True
         self.Start = False
-        self.Move = False
         self.Points = []
 
         self.bridge = CvBridge()
@@ -141,7 +140,7 @@ class CameraFocus(Node):
     #     # print(self.img)
     def listener_callback_right(self, msg):
         # print ("in listener callback")
-        self.img['right_image'] = msg
+        self.img['right_image'] = self.bridge.compressed_imgmsg_to_cv2(msg)
 
     def send_request(self, name, zoom, focus):
         self.req.name = name
@@ -172,8 +171,7 @@ class CameraFocus(Node):
         First = True  # Flag à True s'il stagit de la première itération
         Stop = 0  # 0 = pas stop, 1 = 1er passage en stop, 2 = plus de 1 passage en stop
         time.sleep(1)
-        img = self.bridge.compressed_imgmsg_to_cv2(self.img[im])
-        img_prec_bw = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+        img_prec_bw = cv.cvtColor(self.img[im], cv.COLOR_BGR2GRAY)
         img_prec_bw = cv.GaussianBlur(img_prec_bw, (11, 11), 0)
 
         while(1):
@@ -183,146 +181,140 @@ class CameraFocus(Node):
             # self.zoom = self.future_zoom_focus.result().zoom
             # f = self.future_zoom_focus.result().focus
             # print(self.zoom)
-            img = self.bridge.compressed_imgmsg_to_cv2(self.img[im])
             if len(self.Points) == 2:
-                roi = img[self.Points[0][1]:self.Points[1][1], self.Points[0][0]:self.Points[1][0]]
+                roi = self.img[im][self.Points[0][1]:self.Points[1][1], self.Points[0][0]:self.Points[1][0]]
                 imgBW = cv.cvtColor(roi, cv.COLOR_BGR2GRAY)
             else:
-                imgBW = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+                imgBW = cv.cvtColor(self.img[im], cv.COLOR_BGR2GRAY)
+
+            # img_bw = cv.cvtColor(img[im], cv.COLOR_BGR2GRAY)
+            # img_bw = cv.GaussianBlur(imgBW,(11,11),0)
+            # diff = abs(img_prec_bw - img_bw)
+            # diff = cv.medianBlur(diff,11)
+            # ret, diff = cv.threshold(diff,1,255,cv.THRESH_BINARY)
+            # img_prec_bw = img_bw
+            # sum = cv.integral(diff) # calcul la somme cumulée de touts les pixel dans l'image
+            # move = sum[-1][-1]/(diff.shape[0]*diff.shape[1]*255)
+            # # print(move)
+            # if move > 0.3 and sem < 3:
+            #     sem += 1
+            # elif move <= 0.3 and sem > -1:
+            #     sem -= 1
+            # if sem >= 0 :
+            #     self.Start = False
+            # else :
+            #     self.Start = True
+            # # print(self.Start)
 
             if self.Start is True:
-                # # tp1 = time.time()
-                # # img_bw = cv.cvtColor(img[im], cv.COLOR_BGR2GRAY)
-                # t0 = time.time()
-                diff = cv.subtract(img_prec_bw, imgBW)
-                ret, diff = cv.threshold(diff, 20, 255, cv.THRESH_BINARY)
-                img_prec_bw = imgBW
-                sum = cv.integral(diff) # calcul la somme cumulée de touts les pixel dans l'image
-                move = sum[-1][-1]/(diff.shape[0]*diff.shape[1])
-                # t1 = time.time()
-                # print(t1 - t0)
+                if self.Init is True:
+                    self.Init = False
+                    First = True
+                    Stop = 0
+                    pos_min, pos_max = set_poses(self.zoom)
+                    self.pos = pos_min
+                    res_max = 0
+                    pas = 1
+                    # self.send_request(eye,self.zoom,self.pos) # déplacement des moteurs aux positions de départs
+                    # time.sleep(1)
+                    # self.test_response()
 
-                # print(move)
-                if move >= 10 and sem < 3:
-                    sem += 1
-                elif move < 10 and sem > -1:
-                    sem -= 1
-                if sem >= 0 :
-                    self.Move = True
-                else :
-                    self.Move = False
+                elif Stop == 0:
+                    # if len(self.Points) == 2:
+                    #     roi = self.img[im][self.Points[0][1]:self.Points[1][1], self.Points[0][0]:self.Points[1][0]]
+                    #     imgBW = cv.cvtColor(roi, cv.COLOR_BGR2GRAY )
+                    # else :
+                    #     imgBW = cv.cvtColor(self.img[im], cv.COLOR_BGR2GRAY)
 
-                if self.Move is False:
-
+                    # cv.imwrite(str(pos)+"_"+str(k)+".png",img[im])
                     res = Canny_Sharpness_function(imgBW)
                     canny.append(res)
                     poses.append(self.pos)
-                    # print(eye+"_res = "+str(res))
-                    # print(eye+"_res max = "+str(res_max))
-
-                    if self.zoom < 100:
-                        self.bruit = 5
-
-                    if self.Init is True:
-                        self.Init = False
-                        First = True
-                        Stop = 0
-                        pos_min, pos_max = set_poses(self.zoom)
-                        self.pos = pos_min
-                        res_max = 0
-                        pas = 1
-                        # self.send_request(eye,self.zoom,self.pos) # déplacement des moteurs aux positions de départs
-                        # time.sleep(1)
-                        # self.test_response()
-
-                    elif Stop == 0:
-                        # print (eye+"_pos = " + str(self.pos))
-                        # print("stop = 0")
-                        if res > res_max:
-                            # print("res > res_max")
-                            res_max = res
-                            p_max = self.pos
-                        if First is True:
-                            # print("First = True")
-                            j+=1
-                            canny = []  # liste de stockage des résultats donnés par canny
-                            poses = []
-                            tp1 = time.time()
-                            First = False
-                            borne_inf = res-self.bruit
-                            borne_sup = res+self.bruit
-                            # print ("b_min = "+ str(borne_inf)+"b_max = "+str(borne_sup))
-                            self.pos = move_to(pos_min, pos_max, self.pos, pas)
-                        elif res < borne_inf:
-                            print("res < borne_inf, p_max = " + str(p_max))
-                            self.pos = p_max
-                            # res_max = res
-                            Stop = 1
-                            # self.send_request('left_eye',self.zoom,self.pos-20)
-                            # self.send_request('right_eye',self.zoom,self.pos-20)
-                            self.send_request_focus(self.pos-20, self.pos-20)
-                            time.sleep(0.4)
-                            self.send_request_focus(self.pos, self.pos)
-                            time.sleep(0.4)
-                            # time.sleep(1)
-                            self.test_response()
-                            # self.test_response()
-                            tp2 = time.time()
-                            print("!!!!!!!!!!!!time = " + str(tp2-tp1))
-                        elif res <= seuil:
-                            pas = 10
-                            self.pos = move_to(pos_min, pos_max, self.pos, pas)
-                        elif res > borne_sup:
-                            # print ("borne dépassée")
-                            borne_inf = res-self.bruit
-                            borne_sup = res+self.bruit
-                            # print ("b_min = "+ str(borne_inf)+"b_max = "+str(borne_sup))
-                            pas = 1
-                            self.pos = move_to(pos_min, pos_max, self.pos, pas)
-                        else:  # borne_inf<= res <=borne_sup:
-                            # print ("dans les bornes")
-                            if pas == 1:
-                                pas = 5
-                            # elif pas == 5:
-                                # pas = 10
-                            self.pos = move_to(pos_min, pos_max, self.pos, pas)
-                    elif Stop == 1:
-                        # print ("stop = 1")
-                        Stop = 2
-                        # if res > res_max :
+                    print(eye+"_res = "+str(res))
+                    print(eye+"_res max = "+str(res_max))
+                    # print (eye+"_pos = " + str(self.pos))
+                    # print("stop = 0")
+                    if res > res_max:
+                        # print("res > res_max")
                         res_max = res
-                    elif (res_max < 2 and (res < 0.6*res_max or res > 1.5*res_max)) or (res_max >= 2 and (res < 0.8*res_max or res > 2*res_max)):
-                        # print("Stop = 2 et image flou ")
-                        # print ("res = "+str(res)+", res_max = " + str(res_max))
-                        Stop = 0
-                        First = True
-                        self.pos = pos_min
-                        res_max = 0
+                        p_max = self.pos
+                    if First is True:
+                        # print("First = True")
+                        j+=1
+                        canny = []  # liste de stockage des résultats donnés par canny
+                        poses = []
+                        tp1 = time.time()
+                        First = False
+                        borne_inf = res-self.bruit
+                        borne_sup = res+self.bruit
+                        # print ("b_min = "+ str(borne_inf)+"b_max = "+str(borne_sup))
+                        self.pos = move_to(pos_min, pos_max, self.pos, pas)
+                    elif res < borne_inf:
+                        print("res < borne_inf, p_max = " + str(p_max))
+                        self.pos = p_max
+                        # res_max = res
+                        Stop = 1
+                        # self.send_request('left_eye',self.zoom,self.pos-20)
+                        # self.send_request('right_eye',self.zoom,self.pos-20)
+                        self.send_request_focus(self.pos-20, self.pos-20)
+                        time.sleep(0.2)
+                        # time.sleep(1)
+                        self.test_response()
+                        # self.test_response()
+                        tp2 = time.time()
+                        print("!!!!!!!!!!!!time = " + str(tp2-tp1))
+                    elif res <= seuil:
+                        pas = 10
+                        self.pos = move_to(pos_min, pos_max, self.pos, pas)
+                    elif res > borne_sup:
+                        # print ("borne dépassée")
+                        borne_inf = res-self.bruit
+                        borne_sup = res+self.bruit
+                        # print ("b_min = "+ str(borne_inf)+"b_max = "+str(borne_sup))
                         pas = 1
-                    print(self.pos)
-                    self.send_request_focus(self.pos, self.pos)
-                    print("request sent")
-                    # self.send_request('left_eye',self.zoom,self.pos)
-                    # print("left request sent")
-                    # self.send_request('right_eye',self.zoom,self.pos)
-                    # print("right request sent")
+                        self.pos = move_to(pos_min, pos_max, self.pos, pas)
+                    else:  # borne_inf<= res <=borne_sup:
+                        # print ("dans les bornes")
+                        if pas == 1:
+                            pas = 5
+                        # elif pas == 5:
+                            # pas = 10
+                        self.pos = move_to(pos_min, pos_max, self.pos, pas)
+                elif Stop == 1:
+                    # print ("stop = 1")
+                    Stop = 2
+                    # if res > res_max :
+                    res_max = res
+                elif (res_max < 2 and (res < 0.6*res_max or res > 1.5*res_max)) or (res_max >= 2 and (res < 0.8*res_max or res > 2*res_max)):
+                    # print("Stop = 2 et image flou ")
+                    # print ("res = "+str(res)+", res_max = " + str(res_max))
+                    Stop = 0
+                    First = True
+                    self.pos = pos_min
+                    res_max = 0
+                    pas = 1
+                print(self.pos)
+                self.send_request_focus(self.pos, self.pos)
+                print("request sent")
+                # self.send_request('left_eye',self.zoom,self.pos)
+                # print("left request sent")
+                # self.send_request('right_eye',self.zoom,self.pos)
+                # print("right request sent")
 
-                    if self.pos == pos_min:
-                        time.sleep(1)
-                    if pas == 10:
-                        time.sleep(0.15)
-                    else:
-                        time.sleep(0.1)
-                    # if self.pos == pos_min:
-                    #     time.sleep(1)
-                    # if pas == 10:
-                    #     time.sleep(1)
-                    # else :
-                    #     time.sleep(1)
-                    self.test_response()
-                    # self.test_response()
-                else :
-                    time.sleep(0.03)
+                if self.pos == pos_min:
+                    time.sleep(1)
+                if pas == 10:
+                    time.sleep(0.15)
+                else:
+                    time.sleep(0.1)
+                # if self.pos == pos_min:
+                #     time.sleep(1)
+                # if pas == 10:
+                #     time.sleep(1)
+                # else :
+                #     time.sleep(1)
+                self.test_response()
+                # self.test_response()
 
             plt.figure(j)
             plt.plot(poses, canny)

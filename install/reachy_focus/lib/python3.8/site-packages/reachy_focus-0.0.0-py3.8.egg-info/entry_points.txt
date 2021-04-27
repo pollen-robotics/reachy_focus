@@ -1,0 +1,5 @@
+[console_scripts]
+camera_focus = reachy_focus.camera_focus:main
+camera_focus_1traitement = reachy_focus.camera_focus_1traitement:main
+view_cam = reachy_focus.view_cam:main
+

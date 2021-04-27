@@ -1,0 +1,45 @@
+[0.265s] Invoking command in '/home/nuc2/reachy_ws/src/reachy_focus': PYTHONPATH=/home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/lib/python3.8/site-packages:${PYTHONPATH} /usr/bin/python3 setup.py egg_info --egg-base build/reachy_focus build --build-base /home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/build install --prefix /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus --record /home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/install.log --single-version-externally-managed
+[0.473s] running egg_info
+[0.473s] creating build/reachy_focus/reachy_focus.egg-info
+[0.473s] writing build/reachy_focus/reachy_focus.egg-info/PKG-INFO
+[0.474s] writing dependency_links to build/reachy_focus/reachy_focus.egg-info/dependency_links.txt
+[0.474s] writing entry points to build/reachy_focus/reachy_focus.egg-info/entry_points.txt
+[0.474s] writing requirements to build/reachy_focus/reachy_focus.egg-info/requires.txt
+[0.474s] writing top-level names to build/reachy_focus/reachy_focus.egg-info/top_level.txt
+[0.475s] writing manifest file 'build/reachy_focus/reachy_focus.egg-info/SOURCES.txt'
+[0.501s] reading manifest file 'build/reachy_focus/reachy_focus.egg-info/SOURCES.txt'
+[0.502s] writing manifest file 'build/reachy_focus/reachy_focus.egg-info/SOURCES.txt'
+[0.502s] running build
+[0.502s] running build_py
+[0.502s] creating /home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/build
+[0.502s] creating /home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/build/lib
+[0.502s] creating /home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/build/lib/reachy_focus
+[0.502s] copying reachy_focus/camera_focus_1traitement.py -> /home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/build/lib/reachy_focus
+[0.502s] copying reachy_focus/camera_focus.py -> /home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/build/lib/reachy_focus
+[0.502s] copying reachy_focus/__init__.py -> /home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/build/lib/reachy_focus
+[0.502s] copying reachy_focus/view_cam.py -> /home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/build/lib/reachy_focus
+[0.502s] running install
+[0.503s] running install_lib
+[0.504s] creating /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/lib/python3.8/site-packages/reachy_focus
+[0.504s] copying /home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/build/lib/reachy_focus/camera_focus_1traitement.py -> /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/lib/python3.8/site-packages/reachy_focus
+[0.504s] copying /home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/build/lib/reachy_focus/camera_focus.py -> /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/lib/python3.8/site-packages/reachy_focus
+[0.504s] copying /home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/build/lib/reachy_focus/__init__.py -> /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/lib/python3.8/site-packages/reachy_focus
+[0.504s] copying /home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/build/lib/reachy_focus/view_cam.py -> /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/lib/python3.8/site-packages/reachy_focus
+[0.505s] byte-compiling /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/lib/python3.8/site-packages/reachy_focus/camera_focus_1traitement.py to camera_focus_1traitement.cpython-38.pyc
+[0.507s] byte-compiling /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/lib/python3.8/site-packages/reachy_focus/camera_focus.py to camera_focus.cpython-38.pyc
+[0.509s] byte-compiling /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/lib/python3.8/site-packages/reachy_focus/__init__.py to __init__.cpython-38.pyc
+[0.509s] byte-compiling /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/lib/python3.8/site-packages/reachy_focus/view_cam.py to view_cam.cpython-38.pyc
+[0.510s] running install_data
+[0.510s] creating /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/share/ament_index
+[0.510s] creating /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/share/ament_index/resource_index
+[0.510s] creating /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/share/ament_index/resource_index/packages
+[0.511s] copying resource/reachy_focus -> /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/share/ament_index/resource_index/packages
+[0.511s] copying package.xml -> /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/share/reachy_focus
+[0.511s] running install_egg_info
+[0.512s] Copying build/reachy_focus/reachy_focus.egg-info to /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/lib/python3.8/site-packages/reachy_focus-0.0.0-py3.8.egg-info
+[0.513s] running install_scripts
+[0.529s] Installing camera_focus script to /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/lib/reachy_focus
+[0.529s] Installing camera_focus_1traitement script to /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/lib/reachy_focus
+[0.529s] Installing view_cam script to /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/lib/reachy_focus
+[0.530s] writing list of installed files to '/home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/install.log'
+[0.556s] Invoked command in '/home/nuc2/reachy_ws/src/reachy_focus' returned '0': PYTHONPATH=/home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus/lib/python3.8/site-packages:${PYTHONPATH} /usr/bin/python3 setup.py egg_info --egg-base build/reachy_focus build --build-base /home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/build install --prefix /home/nuc2/reachy_ws/src/reachy_focus/install/reachy_focus --record /home/nuc2/reachy_ws/src/reachy_focus/build/reachy_focus/install.log --single-version-externally-managed
