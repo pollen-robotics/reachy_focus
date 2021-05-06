@@ -86,7 +86,8 @@ class CameraFocus(Node):
     def __init__(self):
         super().__init__('camera_focus')
 
-        self.zoom = 50
+        self.rec = False
+        self.zoom = 350
         self.bruit = 0.4
         self.pos = {
             'left_eye': 0,
@@ -101,6 +102,11 @@ class CameraFocus(Node):
         self.final_pos = {
             'left_eye': -1,
             'right_eye': -1,
+        }
+
+        self.current_zoom = {
+            'left_eye': 350,
+            'right_eye': 350,
         }
 
         self.Start = True
@@ -188,7 +194,8 @@ class CameraFocus(Node):
     def send_request_get_focus_zoom(self, name):
         self.req_zoom_focus.name = name
         self.future_zoom_focus = self.get_zoom_focus_client.call_async(self.req_zoom_focus)
-   
+
+    
     def asserv(self, eye, im):
         res_max = 0  # meilleur résultat de canny obtenu
         p_max = 0  # posistion du focus associée à res_max
@@ -199,10 +206,11 @@ class CameraFocus(Node):
         pas = 1  # pas d'avance
         canny = []  # liste de stockage des résultats donnés par canny
         poses = []  # liste de stockage des positions associées à canny[]
-        seuil = 0.5  # seuil d'interet, en dessous de cette valeur il ne peut pas y avoir de pic
-        k = -1  # variable de numérotation des images
+        seuil = 0  # seuil d'interet, en dessous de cette valeur il ne peut pas y avoir de pic
+        k = 0  # variable de numérotation des images
         j = 0  # variable de numérotation des diagrammes
         sem = 0
+        zoom_prec = self.zoom
 
         First = True  # Flag à True s'il stagit de la première itération
         Stop = 0  # 0 = pas stop, 1 = 1er passage en stop, 2 = plus de 1 passage en stop
@@ -215,11 +223,16 @@ class CameraFocus(Node):
             # j += 1
             self.send_request_get_focus_zoom(eye)
             img = self.bridge.compressed_imgmsg_to_cv2(self.img[im])
-            if len(self.Points) == 2:
-                roi = img[self.Points[0][1]:self.Points[1][1], self.Points[0][0]:self.Points[1][0]]
-                imgBW = cv.cvtColor(roi, cv.COLOR_BGR2GRAY)
-            else:
-                imgBW = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+            # if self.rec:
+            # print(k)
+            # cv.imwrite("src/reachy_focus/rec/"+str(eye)+str(k)+".png", img)
+            # k+=1
+            
+            # if len(self.Points) == 2:
+            #     roi = img[self.Points[0][1]:self.Points[1][1], self.Points[0][0]:self.Points[1][0]]
+            #     imgBW = cv.cvtColor(roi, cv.COLOR_BGR2GRAY)
+            # else:
+            imgBW = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
             if self.Start is True:
                 # # tp1 = time.time()
@@ -242,6 +255,11 @@ class CameraFocus(Node):
                     self.Move = True
                 else :
                     self.Move = False
+
+                # print(str(eye) +" " +str(k))
+                
+                #cv.imwrite("src/reachy_focus/rec/"+str(eye)+str(self.pos[eye])+".png", img)
+                #k+=1
                     
                 # print(str(eye)+": "+str(time.time()-tp1))
                 # print("move ="+ str(move))
@@ -259,13 +277,21 @@ class CameraFocus(Node):
 
                     self.test_response(self.future_zoom_focus)
                     try:
-                        self.zoom = self.future_zoom_focus.result().zoom
+                        self.current_zoom[eye] = self.future_zoom_focus.result().zoom
                     except  Exception as e:
                         pass
+                        
+                    if self.current_zoom["left_eye"] == self.current_zoom["right_eye"]:
+                        self.zoom = self.current_zoom["left_eye"]
+                    print("zoom "+ str(self.zoom))
 
                     if self.zoom < 100:
                         self.bruit = 5
-
+                    
+                    # if self.zoom != zoom_prec:
+                    #     self.Init['left_eye'] = True
+                    #     self.Init['right_eye'] = True
+                    #     zoom_prec = self.zoom
 
                     if self.Init[eye] is True:
                         # if seuil > res_max and res_max != 0:
@@ -275,7 +301,7 @@ class CameraFocus(Node):
                         #         seuil = 0.5
                         # elif seuil < res_max-5:
                         #     seuil = res_max-5
-                        print (seuil)
+                        #print (seuil)
                         self.Init[eye] = False
                         First = True
                         Stop = 0
@@ -285,7 +311,7 @@ class CameraFocus(Node):
                         pas = 1
                         if (eye == "left_eye" and self.Init["right_eye"] is False) or (eye == "right_eye" and self.Init["left_eye"] is False):
                             self.send_request_set_focus_2_cam(pos_min, pos_min)  # déplacement des moteurs aux positions de départs
-                            time.sleep(1)
+                            time.sleep(2)
                             print(str(eye) + " initialisation faite")
                             # self.test_response(self.future)
                             self.e_init.set()
@@ -325,12 +351,13 @@ class CameraFocus(Node):
                             print("!!!!!!!!!!!!time = " + str(tp2-tp1))
                             if (eye == "left_eye" and self.final_pos["right_eye"] > -1) or (eye == "right_eye" and self.final_pos["left_eye"] > -1):
                                 Stop = 1
+                                print(self.final_pos["right_eye"])
                                 self.send_request_set_focus_2_cam(self.final_pos["left_eye"] - 30, self.final_pos["right_eye"] - 30)
                                 time.sleep(0.5)
                                 print(str(eye) + ": retour en arr")
                                 self.send_request_set_focus_2_cam(self.final_pos["left_eye"], self.final_pos["right_eye"])
                                 time.sleep(0.5)
-                                print(str(eye) + ": pos max atteind")
+                                print(str(eye) + ": pos max atteind, right_eye = " + str(self.final_pos["right_eye"])+" left_eye = " + str(self.final_pos["left_eye"]))
                                 self.e_end.set()
                                 # self.test_response(self.future)
                                 self.pos[eye] = self.final_pos[eye]
@@ -361,30 +388,33 @@ class CameraFocus(Node):
                             # elif pas == 5:
                                 # pas = 10
                             self.pos[eye] = move_to(pos_min, pos_max, self.pos[eye], pas)
+                        
+                        self.send_request_set_focus_zoom(eye, self.zoom, self.pos[eye])
+                        if self.pos[eye] == pos_min:
+                            time.sleep(1)
+                        if pas == 10:
+                            time.sleep(0.15)
+                        else:
+                            time.sleep(0.1)
+                    
                     elif Stop == 1:
                         print ("stop = 1")
                         Stop = 2
                         # if res > res_max :
                         res_max = res
-                    elif (res_max < 2 and (res < 0.6*res_max or res > 1.5*res_max)) or (res_max >= 2 and (res < 0.8*res_max or res > 2*res_max)):
-                        print("Stop = 2 et image flou ")
-                        # print ("res = "+str(res)+", res_max = " + str(res_max))
-                        # Stop = 0
-                        # First = True
-                        self.Init['left_eye'] = True
-                        self.Init['right_eye'] = True
-                        # self.pos[eye] = pos_min
-                        # res_max = 0
-                        # pas = 1
+                    # elif ( res < 0.2*res_max or res > 2.5*res_max):
+                    # #elif (res_max < 2 and (res < 0.6*res_max or res > 1.5*res_max)) or (res_max >= 2 and (res < 0.8*res_max or res > 2*res_max)):
+                    #     print("Stop = 2 et image flou ")
+                    #     print ("refocus : res = "+str(res)+", res_max = " + str(res_max))
+                    #     # Stop = 0
+                    #     # First = True
+                    #     self.Init['left_eye'] = True
+                    #     self.Init['right_eye'] = True
+                    #     # self.pos[eye] = pos_min
+                    #     # res_max = 0
+                    #     # pas = 1
 
-                    self.send_request_set_focus_zoom(eye, self.zoom, self.pos[eye])
-
-                    if self.pos[eye] == pos_min:
-                        time.sleep(1)
-                    if pas == 10:
-                        time.sleep(0.15)
-                    else:
-                        time.sleep(0.1)
+    
                     # if self.pos[eye] == pos_min:
                     #     time.sleep(1)
                     # if pas == 10:
@@ -394,14 +424,14 @@ class CameraFocus(Node):
                     # self.test_response(self.future)
                 else:
                     time.sleep(0.04)
-            # if eye == "left_eye":
-            #     plt.figure(j)
-            #     plt.plot(poses,canny)
-            #     plt. grid()
-            #     plt.title("résultats traitement d'image par canny en fonction du focus")
-            #     plt.xlabel("pas du focus de la lentille")
-            #     plt.ylabel("resultat de la fonction de contraste")
-            #     plt.savefig("src/reachy_focus/datas/canny_"+str(eye)+str(j)+".png")
+
+                # if eye == "right_eye":
+                #     plt.figure()
+                #     plt.plot(poses,canny)
+                #     plt.title("profil du focus")
+                #     plt.xlabel("pas du focus de la lentille")
+                #     plt.ylabel("resultat de la fonction de contraste")
+                #     plt.savefig("src/reachy_focus/datas/"+str(eye)+"/canny_"+str(j)+".png")
 
     def test_response(self, future):
         i = 0
@@ -421,37 +451,37 @@ class CameraFocus(Node):
             time.sleep(0.001)
             
     def on_press(self, key):  # callback function pynput appelée à l'activation d'une touche
-        if str(key) == "Key.up":  # augmentation du zoom de 1 pas
-            if self.zoom + 1 <= 600:
-                self.zoom += 1
-                self.Init['left_eye'] = True
-                self.Init['right_eye'] = True
-        if str(key) == "Key.down":  # diminution du zoom de 1 pas
-            if (self.zoom - 1) > 0:
-                self.zoom -= 1
-                self.Init['left_eye'] = True
-                self.Init['right_eye'] = True
-        if str(key) == "'z'":  # modificarion du zoom
-            user_input = input('zoom: ')
-            err = 1
-            while(err == 1):
-                try:
-                    self.zoom = int(user_input)
-                    if 0 <= self.zoom <= 600:
-                        err = 0
-                        self.Init['left_eye'] = True
-                        self.Init['right_eye'] = True
-                    else:
-                        user_input = input("le zoom doit être comprs entre 0 et 600, recommencez: ")
-                except Exception as e:
-                    user_input = input("le zoom saisie n'est pas un int, recommencez: ")
-        if str(key) == "'c'":  # clear all, ne garde pas en mémoire la dernière ROI selectionnée
-            print("clear all")
-            self.Init['left_eye'] = True
-            self.Init['right_eye'] = True
-            if self.Start is False:
-                self.Start = True
-            self.Points = []
+        # if str(key) == "Key.up":  # augmentation du zoom de 1 pas
+        #     if self.zoom + 1 <= 600:
+        #         self.zoom += 1
+        #         self.Init['left_eye'] = True
+        #         self.Init['right_eye'] = True
+        # if str(key) == "Key.down":  # diminution du zoom de 1 pas
+        #     if (self.zoom - 1) > 0:
+        #         self.zoom -= 1
+        #         self.Init['left_eye'] = True
+        #         self.Init['right_eye'] = True
+        # if str(key) == "'z'":  # modificarion du zoom
+        #     user_input = input('zoom: ')
+        #     err = 1
+        #     while(err == 1):
+        #         try:
+        #             self.zoom = int(user_input)
+        #             if 0 <= self.zoom <= 600:
+        #                 err = 0
+        #                 self.Init['left_eye'] = True
+        #                 self.Init['right_eye'] = True
+        #             else:
+        #                 user_input = input("le zoom doit être comprs entre 0 et 600, recommencez: ")
+        #         except Exception as e:
+        #             user_input = input("le zoom saisie n'est pas un int, recommencez: ")
+        # if str(key) == "'c'":  # clear all, ne garde pas en mémoire la dernière ROI selectionnée
+        #     print("clear all")
+        #     self.Init['left_eye'] = True
+        #     self.Init['right_eye'] = True
+        #     if self.Start is False:
+        #         self.Start = True
+        #     self.Points = []
         if str(key) == "'r'":  # restart, relance la recherche en concervant la ROI selectionnée
             print("restart the sequence")
             self.Init['left_eye'] = True
@@ -469,19 +499,25 @@ class CameraFocus(Node):
             else:
                 self.Start = True
                 print("Start")
-        if str(key) == "'b'":
-            self.Start = False
-            user_input = input('bruit: ')
-            err = 1
-            while(err == 1):
-                try:
-                    self.bruit = float(user_input)
-                    break
-                except Exception as e:
-                    user_input = input("le bruit saisie n'est pas un float, recommencez: ")
-            self.Init['left_eye'] = True
-            self.Init['right_eye'] = True
-            self.Start = True
+        # if str(key) == "'b'":
+        #     self.Start = False
+        #     user_input = input('bruit: ')
+        #     err = 1
+        #     while(err == 1):
+        #         try:
+        #             self.bruit = float(user_input)
+        #             break
+        #         except Exception as e:
+        #             user_input = input("le bruit saisie n'est pas un float, recommencez: ")
+        #     self.Init['left_eye'] = True
+        #     self.Init['right_eye'] = True
+        #     self.Start = True
+        
+        # if str(key) == "'a'":
+        #     if self.rec == True:
+        #         self.rec = False
+        #     else:
+        #         self.rec = True
 
         # if str(key) == "'p'":
         #     cv.imwrite(str(p)+"_"+str(pos[eye])+".png",img[im])
