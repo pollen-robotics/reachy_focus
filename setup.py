@@ -15,7 +15,6 @@ setup(
         'setuptools',
         'zoom_kurokesu>=1',
         'pynput',
-        'cv2',
     ],
     zip_safe=True,
     maintainer='nuc2',
