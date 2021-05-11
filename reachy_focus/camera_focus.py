@@ -15,6 +15,7 @@ from sensor_msgs.msg._compressed_image import CompressedImage
 from reachy_msgs.srv import SetCameraFocusZoom, GetCameraFocusZoom
 from reachy_msgs.srv import Set2CamerasFocus
 
+import os
 import cv2 as cv
 from cv_bridge import CvBridge
 
@@ -102,7 +103,10 @@ class CameraFocus(Node):
 
         self.start = True
         self.zoom = -1
+        self.last_zoom = -1
         self.bruit = 0.4
+
+        self.k = 0
 
         self.bridge = CvBridge()
 
@@ -249,7 +253,6 @@ class CameraFocus(Node):
 
                     if self.current_zoom["left_eye"] == self.current_zoom["right_eye"]:
                         self.zoom = self.current_zoom["left_eye"]
-                    # print("zoom " + str(self.zoom))
 
                     if self.zoom < 100:
                         self.bruit = 5
@@ -264,7 +267,11 @@ class CameraFocus(Node):
 
                     if (eye == "left_eye" and self.init["right_eye"] is False) or (eye == "right_eye" and self.init["left_eye"] is False):
                         self.send_request_set_focus_2_cam(min_pos, min_pos)
-                        time.sleep(4)  # leave enough time in case of zoom change
+                        if self.last_zoom != self.zoom:
+                            time.sleep(4)  # leave enough time in case of zoom change
+                            self.last_zoom = self.zoom
+                        else:
+                            time.sleep(2)
                         # self.test_response(self.future)
                         self.e_init.set()
                         self.e_init.clear()
