@@ -5,6 +5,7 @@ In order to restart the focus algoritm because of zoom or environment changing
 press "r" key
 """
 
+from typing import Dict
 import rclpy
 from rclpy.node import Node
 
@@ -12,8 +13,8 @@ import numpy as np
 from pynput import keyboard
 
 from sensor_msgs.msg._compressed_image import CompressedImage
-from reachy_msgs.srv import SetCameraFocusZoom, GetCameraFocusZoom
-from reachy_msgs.srv import Set2CamerasFocus
+from reachy_msgs.msg import ZoomCommand
+from reachy_msgs.srv import GetCameraZoomFocus, SetCameraZoomFocus
 
 import cv2 as cv
 from cv_bridge import CvBridge
@@ -21,7 +22,16 @@ from cv_bridge import CvBridge
 import time
 import threading
 
-from functools import partial
+
+def canny_sharpness_function(im):
+    """Return the shaprness of im through canny edge dectection algorithm.
+
+    Args:
+        im: Black an white image used in canny edge detection algorithm
+    """
+    im = cv.Canny(im, 50, 100)
+    im_sum = cv.integral(im)
+    return im_sum[-1][-1]/(im.shape[0]*im.shape[1])
 
 
 def move_to(min_pos, max_pos, pos, step):
@@ -93,62 +103,62 @@ class CameraFocus(Node):
             'right_eye': -1,
         }
 
+        self.init = {
+            'left_eye': True,
+            'right_eye': True,
+        }
+
         self.current_zoom = {
             'left_eye': -1,
             'right_eye': -1,
         }
 
+        self.img = {
+            'left_eye': CompressedImage(),
+            'right_eye': CompressedImage(),
+        }
+
         self.start = True
-        # self.zoom = -1
-        # self.last_zoom = -1
+        self.zoom = -1
+        self.last_zoom = -1
+        self.bruit = 0.4
+
+        self.k = 0
 
         self.bridge = CvBridge()
 
         self.camera_subscriber_left = self.create_subscription(
-            CompressedImage,
-            'left_image',
-            partial(self.on_image_update, side='left'),
-            1,
-        )
+            CompressedImage, 'left_image',
+            self.listener_callback_left,
+            10)
 
         self.camera_subscriber_right = self.create_subscription(
-            CompressedImage,
-            'right_image',
-            partial(self.on_image_update, side='right'),
-            1,
+            CompressedImage, 'right_image',
+            self.listener_callback_right,
+            10)
+
+        self.set_camera_zoom_focus_client = self.create_client(
+            SetCameraZoomFocus,
+            'set_camera_zoom_focus',
         )
 
-        self.set_camera_focus_zoom_client = self.create_client(
-            SetCameraFocusZoom,
-            'set_camera_focus_zoom')
-        while not self.set_camera_focus_zoom_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('service set_camera_focus_zoom_client not available, waiting again...')
-        self.req = SetCameraFocusZoom.Request()
+        self.get_camera_zoom_focus_client = self.create_client(
+            GetCameraZoomFocus,
+            'get_camera_zoom_focus',
+        )
 
-        self.set_focus_2_cameras_client = self.create_client(
-            Set2CamerasFocus,
-            'set_2_cameras_focus')
-        while not self.set_focus_2_cameras_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('service set_focus_2_cameras_client not available, waiting again...')
-        self.req_focus_2_cam = Set2CamerasFocus.Request()
-
-        self.get_zoom_focus_client = self.create_client(
-            GetCameraFocusZoom,
-            'get_camera_focus_zoom')
-        while not self.get_zoom_focus_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('service get_zoom_focus_client not available, waiting again...')
-        self.req_zoom_focus = GetCameraFocusZoom.Request()
+        time.sleep(5.0)
 
         self.keyboard_listener = keyboard.Listener(on_press=self.on_press)
         self.keyboard_listener.start()
 
         self.right_eye_thread = threading.Thread(
-            target=self.focusing_algorithm,
-            args=('left_eye',),
+            target=self.focussing_algorithm,
+            args=('right_eye', 'right_image'),
             daemon=True)
         self.left_eye_thread = threading.Thread(
-            target=self.focusing_algorithm,
-            args=('right_eye',),
+            target=self.focussing_algorithm,
+            args=('left_eye', 'left_image'),
             daemon=True)
         self.e_init = threading.Event()
         self.e_end = threading.Event()
@@ -156,59 +166,46 @@ class CameraFocus(Node):
         self.right_eye_thread.start()
         self.left_eye_thread.start()
 
-    def canny_sharpness_function(self, compressed_img):
-        """Return the shaprness of im through canny edge dectection algorithm.
+    def _wait_for(self, future):
+        for _ in range(10000):
+            if future.done():
+                return future.result()
+            time.sleep(0.001)
+
+    def listener_callback_left(self, msg):
+        """Save last left_image catched.
 
         Args:
-            im: Black an white image used in canny edge detection algorithm
+            msg: Ros CompressedImage message received from left camera publisher
         """
-        im = self.bridge.compressed_imgmsg_to_cv2(compressed_img)
-        im = cv.Canny(cv.cvtColor(im, cv.COLOR_BGR2GRAY), 50, 100)
-        im_sum = cv.integral(im)
-        return im_sum[-1][-1]/(im.shape[0]*im.shape[1])
+        self.img['left_image'] = msg
 
-    def on_image_update(self, msg, side):
-        """Get data from image. Callback for "/'side'_image "subscriber."""
-        # self.eyes_info[side+'_eye']['img'] = self.bridge.compressed_imgmsg_to_cv2(msg)
-        self.eyes_info[side+'_eye']['compressed_img'] = msg
-
-    def send_request_set_focus_zoom(self, name, zoom, focus):
-        """Send request through "set_camera_focus_zoom_client" client.
+    def listener_callback_right(self, msg):
+        """Save last right_image catched.
 
         Args:
-            name: camera name, can be 'left_eye' or 'right_eye'
-            zoom: integer zoom desired value
-            focus: integer focus desired value
-
+            msg: Ros CompressedImage message received from right camera publisher
         """
-        self.req.name = name
-        self.req.zoom = zoom
-        self.req.focus = focus
-        self.future = self.set_camera_focus_zoom_client.call_async(self.req)
+        self.img['right_image'] = msg
 
-    def send_request_set_focus_2_cam(self, left_focus, right_focus):
-        """Send request through "set_focus_2_cameras_client" client.
+    def send_request_set_camera_zoom_focus(self, command: Dict):
+        req = SetCameraZoomFocus.Request()
 
-        This client ask cameras to go to "ref_focus" and "right_focus respectively at once"
+        for side, cmd in command.items():
+            for cmd_name, value in cmd.items():
+                zoom_cmd_msg = ZoomCommand()
+                zoom_cmd_msg.flag = True
+                zoom_cmd_msg.value = value
+                setattr(req, side+'_'+cmd_name, zoom_cmd_msg)
+        result = self._wait_for(self.set_camera_zoom_focus_client.call_async(req))
+        return result
 
-        Args:
-            left_focus: left camera integer focus desired value
-            right_focus: right camera integer focus desired value
-        """
-        self.req_focus_2_cam.left_focus = left_focus
-        self.req_focus_2_cam.right_focus = right_focus
-        self.future_focus_2_cam = self.set_focus_2_cameras_client.call_async(self.req_focus_2_cam)
+    def send_request_get_camera_zoom_focus(self):
+        req = GetCameraZoomFocus.Request()
+        result = self._wait_for(self.get_camera_zoom_focus_client.call_async(req))
+        return result
 
-    def send_request_get_focus_zoom(self, name):
-        """Send request through "get_zoom_focus_client" client.
-
-        Args :
-            name : camera name, can be 'left_eye' or 'right_eye'
-        """
-        self.req_zoom_focus.name = name
-        self.future_zoom_focus = self.get_zoom_focus_client.call_async(self.req_zoom_focus)
-
-    def focusing_algorithm(self, eye):
+    def focussing_algorithm(self, eye, im):
         """Endless loop which handle the focus of one camera refered as "eye".
 
         Cameras focus motors start and stop at once
@@ -216,6 +213,7 @@ class CameraFocus(Node):
 
         Args:
             eye: camera name, can be 'left_eye' or 'right_eye'
+            im: image position, can be 'left_image' or 'right_image'
         """
         max_res = 0  # Best canny sharpness function result obtained
         p_max = 0  # focus position link to max_res
@@ -224,56 +222,50 @@ class CameraFocus(Node):
         low_thresh = 0  # lower noise tolerance threshold
         up_thresh = 0  # upper noise tolerance threshold
         step = 1  # moving step
-        noise = 0.4
 
-        self.eyes_info[eye]['init'] = True
+        self.init[eye] = True  # True means need to be initialized
         first = True  # True means first iteration
         stop = 0
-        zoom = -1
-        last_zoom = -1
         time.sleep(1)
 
         while(1):
             if self.start:
-                res = self.canny_sharpness_function(self.eyes_info[eye]['compressed_img'])
+                img = self.bridge.compressed_imgmsg_to_cv2(self.img[im])
+                imgBW = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+                res = canny_sharpness_function(imgBW)
 
-                if self.eyes_info[eye]['init']:
-                    # while (self.eyes_info['left_eye']['current_zoom'] == -1 or self.eyes_info['right_eye']['current_zoom'] == -1):
-                    while(self.current_zoom["left_eye"] == -1 or self.current_zoom["right_eye"] == -1):
-                        self.send_request_get_focus_zoom(eye)
-                        self.test_response(self.future_zoom_focus)
-                        try:
-                            # self.eyes_info[eye]['current_zoom'] = self.future_zoom_focus.result().zoom
-                            self.current_zoom[eye] = self.future_zoom_focus.result().zoom
-                        except Exception:
-                            pass
+                if self.init[eye] is True:
+                    while self.current_zoom[eye] == -1:
+                        # self.send_request_get_focus_zoom(eye)
+                        # self.test_response(self.future_zoom_focus)
+                        # try:
+                        #     self.current_zoom[eye] = self.future_zoom_focus.result().zoom
+                        # except Exception:
+                        #     pass
+                        # self._logger.info(str(self.send_request_get_multiple()))
+                        self.current_zoom[eye] = getattr(self.send_request_get_camera_zoom_focus(), eye.split('_')[0]+'_zoom')
 
-                    # if self.eyes_info['left_eye']['current_zoom'] == self.eyes_info['right_eye']['current_zoom']:
-                    if self.current_zoom["left_eye"] == self.current_zoom["right_eye"]:
-                        zoom = self.current_zoom["left_eye"]
-                        # zoom = self.eyes_info['left_eye']['current_zoom']
+                    self.zoom = self.current_zoom["left_eye"]
 
-                    if zoom < 100:
-                        noise = 5
+                    if self.zoom < 100:
+                        self.bruit = 5
 
                     first = True
                     stop = 0
-                    min_pos, max_pos = set_poses(zoom)
+                    min_pos, max_pos = set_poses(self.zoom)
                     self.pos[eye] = min_pos
-                    # self.eyes_info[eye]['pos'] = min_pos
-
                     max_res = 0
                     step = 1
-                    self.eyes_info[eye]['init'] = False
+                    self.init[eye] = False
 
-                    if (eye == "left_eye" and self.eyes_info['right_eye']['init'] is False) or (eye == 'right_eye' and self.eyes_info['left_eye'] is False):
-                    # if (eye == "left_eye" and self.init["right_eye"] is False) or (eye == "right_eye" and self.init["left_eye"] is False):
-                        self.send_request_set_focus_2_cam(min_pos, min_pos)
-                        if last_zoom != zoom:
+                    if (eye == "left_eye" and self.init["right_eye"] is False) or (eye == "right_eye" and self.init["left_eye"] is False):
+                        self.send_request_set_camera_zoom_focus({'left': {'focus': min_pos}, 'right': {'focus': min_pos}})
+                        if self.last_zoom != self.zoom:
                             time.sleep(4)  # leave enough time in case of zoom change
-                            last_zoom = zoom
+                            self.last_zoom = self.zoom
                         else:
                             time.sleep(2)
+
                         self.e_init.set()
                         self.e_init.clear()
                     else:
@@ -283,75 +275,42 @@ class CameraFocus(Node):
                     if res > max_res:
                         max_res = res
                         p_max = self.pos[eye]
-                        # p_max = self.eyes_info[eye]['pos']
 
-                    if first:
+                    if first is True:
                         first = False
-                        low_thresh = res - noise
-                        up_thresh = res + noise
-
-                        # self.eyes_info[eye]['pos'] = move_to(min_pos, max_pos, self.eyes_info[eye]['pos'], step)
+                        low_thresh = res-self.bruit
+                        up_thresh = res+self.bruit
                         self.pos[eye] = move_to(min_pos, max_pos, self.pos[eye], step)
-                    # elif res < low_thresh or self.eyes_info[eye]['pos'] == max_pos:
                     elif res < low_thresh or self.pos[eye] == max_pos:
-                        # self.eyes_info[eye]['final_pos'] = p_max
                         self.final_pos[eye] = p_max
-                        # if (eye == 'left_eye' and self.eyes_info['right_eye']['final_pos'] > -1) or (eye == 'right_eye' and self.eyes_info['left_eye']['final_pos'] > -1):
                         if (eye == "left_eye" and self.final_pos["right_eye"] > -1) or (eye == "right_eye" and self.final_pos["left_eye"] > -1):
                             stop = 1
-
-                            # temp_left = move_to(
-                            #     min_pos,
-                            #     max_pos,
-                            #     self.eyes_info['left_eye']['final_pos'],
-                            #     -30,
-                            # )
-                            # temp_right = move_to(
-                            #     min_pos,
-                            #     max_pos,
-                            #     self.eyes_info['right_eye']['final_pos'],
-                            #     -30,
-                            # )
                             temp_left = move_to(min_pos, max_pos,
                                                 self.final_pos["left_eye"],
                                                 -30)
                             temp_right = move_to(min_pos, max_pos,
                                                  self.final_pos["right_eye"],
                                                  -30)
-                            self.send_request_set_focus_2_cam(temp_left,
-                                                              temp_right)
+                            self.send_request_set_camera_zoom_focus({'left': {'focus': temp_left}, 'right': {'focus': temp_right}})
+
                             time.sleep(0.5)
-                            self.send_request_set_focus_2_cam(
-                                self.final_pos["left_eye"],
-                                self.final_pos["right_eye"])
-                            # self.send_request_set_focus_2_cam(
-                            #     self.eyes_info['left_eye']['final_pos'],
-                            #     self.eyes_info['right_eye']['final_pos'],
-                            # )
+                            self.send_request_set_camera_zoom_focus({'left': {'focus': self.final_pos["left_eye"]}, 'right': {'focus': self.final_pos["right_eye"]}})
                             time.sleep(0.5)
                             self.e_end.set()
-
-                            # self.eyes_info[eye]['pos'] = self.eyes_info[eye]['final_pos']
-                            # self.eyes_info[eye]['final_pos'] = -1
                             self.pos[eye] = self.final_pos[eye]
                             self.final_pos[eye] = -1
                             self.e_end.clear()
                         else:
                             self.e_end.wait()
-
-                            # self.eyes_info[eye]['pos'] = self.eyes_info['final_pos']
                             self.pos[eye] = self.final_pos[eye]
                             self.final_pos[eye] = -1
-                            # self.eyes_info['final_pos'] = -1
-
                             stop = 1
                         self.start = False
 
                     elif res > up_thresh:
-                        low_thresh = res - noise
-                        up_thresh = res + noise
+                        low_thresh = res-self.bruit
+                        up_thresh = res+self.bruit
                         step = 1
-                        # self.eyes_info[eye]['pos'] = move_to(min_pos, max_pos, self.eyes_info[eye]['pos'], step)
                         self.pos[eye] = move_to(min_pos,
                                                 max_pos,
                                                 self.pos[eye],
@@ -360,20 +319,12 @@ class CameraFocus(Node):
                     else:
                         if step == 1:
                             step = 5
-                        # self.eyes_info[eye]['pos'] = move_to(min_pos, max_pos, self.eyes_info[eye]['pos'], step)
                         self.pos[eye] = move_to(min_pos,
                                                 max_pos,
                                                 self.pos[eye],
                                                 step)
 
-                    # self.send_request_get_focus_zoom(
-                    #     eye,
-                    #     zoom,
-                    #     self.eyes_info[eye]['pos'],
-                    # )
-                    self.send_request_set_focus_zoom(eye,
-                                                     zoom,
-                                                     self.pos[eye])
+                    self.send_request_set_camera_zoom_focus({eye.split('_')[0]: {'zoom': self.zoom, 'focus': self.pos[eye]}})
                     time.sleep(0.15)
 
             else:
@@ -406,12 +357,8 @@ class CameraFocus(Node):
         """
         if str(key) == "'r'":
             print("restart the sequence")
-
-            self.eyes_info['left_eye']['init'] = True
-            self.eyes_info['right_eye']['init'] = True
-            # self.eyes_info['left_eye']['current_zoom'] = -1
-            # self.eyes_info['right_eye']['current_zoom'] = -1
-
+            self.init['left_eye'] = True
+            self.init['right_eye'] = True
             self.current_zoom['left_eye'] = -1
             self.current_zoom['right_eye'] = -1
             if self.start is False:
@@ -437,9 +384,10 @@ def main(args=None):
 
     try:
         rclpy.spin(camera_focus)
-
     except KeyboardInterrupt:
+
         camera_focus.destroy_node()
+
         rclpy.shutdown()
 
 
