@@ -10,7 +10,6 @@ import rclpy
 from rclpy.node import Node
 
 import numpy as np
-from pynput import keyboard
 
 from sensor_msgs.msg._compressed_image import CompressedImage
 from reachy_msgs.msg import ZoomCommand
@@ -97,10 +96,7 @@ class CameraFocus(Node):
             'get_camera_zoom_focus',
         )
 
-        time.sleep(5.0)
-
-        self.keyboard_listener = keyboard.Listener(on_press=self.on_press)
-        self.keyboard_listener.start()
+        time.sleep(5.0) # TODO: check when first image has been recovered instead
 
         self.right_eye_thread = threading.Thread(
             target=self.focusing_algorithm,
@@ -156,11 +152,19 @@ class CameraFocus(Node):
         """Get data from image. Callback for "/'side'_image "subscriber."""
         self.eyes_info[side+'_eye']['compressed_img'] = msg
 
-    def set_focus_state(self,
-                        request: SetFocusState.Request,
-                        response: SetFocusState.Response
-                        ) -> SetFocusState.Response:
+    def set_focus_state_callback(self,
+                                request: SetFocusState.Request,
+                                response: SetFocusState.Response
+                                ) -> SetFocusState.Response:
+        if request.eye not in ['left_eye', 'right_eye']:
+            self._logger.warning("Invalid name sent to focus controller (must be in ('left_eye', 'right_eye')).")
+            response.success = False
+            return response
+
         self.start = request.state
+        if self.start:
+            self.eyes_info[request.eye]['init'] = True
+            self.eyes_info[request.eye]['current_zoom'] = -1
         response.success = True
         return response
 
@@ -278,32 +282,6 @@ class CameraFocus(Node):
 
             else:
                 time.sleep(0.04)
-
-    def on_press(self, key):
-        """Call after key press event.
-
-        "r" key: restart the focus algorithm
-        "s" key: Allow to start/stop the focus algorithm
-
-        Args:
-            key: key press id
-        """
-        if str(key) == "'r'":
-            print("restart the sequence")
-            self.eyes_info['left_eye']['init'] = True
-            self.eyes_info['right_eye']['init'] = True
-            self.eyes_info['left_eye']['current_zoom'] = -1
-            self.eyes_info['right_eye']['current_zoom'] = -1
-            if not self.start:
-                self.start = True
-
-        if str(key) == "'s'":
-            if self.start is True:
-                self.start = False
-                print("stop")
-            else:
-                self.start = True
-                print("start")
 
 
 def main(args=None):
