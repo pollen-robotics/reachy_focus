@@ -15,6 +15,7 @@ from pynput import keyboard
 from sensor_msgs.msg._compressed_image import CompressedImage
 from reachy_msgs.msg import ZoomCommand
 from reachy_msgs.srv import GetCameraZoomFocus, SetCameraZoomFocus
+from reachy_msgs.srv import SetFocusState
 
 import cv2 as cv
 from cv_bridge import CvBridge
@@ -22,25 +23,6 @@ from cv_bridge import CvBridge
 import time
 import threading
 from functools import partial
-
-
-def compute_next_pose(min_pos, max_pos, pos, step):
-    """Return the next position to reach regarding range limitations.
-
-    Args:
-        max_pos: upper position limitation
-        min_pos: lower position limitation
-        pos: curent position of the stepper motor
-        step:step between the current position and the next desired,
-        can be positive as negative value
-    """
-    if min_pos < pos + step < max_pos:
-        pos += step
-    elif pos + step >= max_pos:
-        pos = max_pos
-    elif pos + step <= min_pos:
-        pos = min_pos
-    return pos
 
 
 def compute_poses_maxima(zoom):
@@ -99,6 +81,12 @@ class CameraFocus(Node):
             1,
             )
 
+        self.set_focus_state_service = self.create_service(
+            SetFocusState,
+            'set_focus_state',
+            self.set_focus_state_callback,
+        )
+
         self.set_camera_zoom_focus_client = self.create_client(
             SetCameraZoomFocus,
             'set_camera_zoom_focus',
@@ -134,6 +122,24 @@ class CameraFocus(Node):
                 return future.result()
             time.sleep(0.001)
 
+    def compute_next_pose(self, eye: str, step: int):
+        """Return the next position to reach regarding range limitations.
+
+        Args:
+            max_pos: upper position limitation
+            min_pos: lower position limitation
+            pos: curent position of the stepper motor
+            step:step between the current position and the next desired,
+            can be positive as negative value
+        """
+        if self.min_pos < self.eyes_info[eye]['pos'] + step < self.max_pos:
+            self.eyes_info[eye]['pos'] += step
+        elif self.eyes_info[eye]['pos'] + step >= self.max_pos:
+            self.eyes_info[eye]['pos'] = self.max_pos
+        elif self.eyes_info[eye]['pos'] + step <= self.min_pos:
+            self.eyes_info[eye]['pos'] = self.min_pos
+        return self.eyes_info[eye]['pos']
+
     def canny_sharpness_function(self, im):
         """Return the shaprness of im through canny edge dectection algorithm.
 
@@ -149,6 +155,14 @@ class CameraFocus(Node):
     def on_image_update(self, msg, side):
         """Get data from image. Callback for "/'side'_image "subscriber."""
         self.eyes_info[side+'_eye']['compressed_img'] = msg
+
+    def set_focus_state(self,
+                        request: SetFocusState.Request,
+                        response: SetFocusState.Response
+                        ) -> SetFocusState.Response:
+        self.start = request.state
+        response.success = True
+        return response
 
     def send_request_set_camera_zoom_focus(self, command: Dict):
         req = SetCameraZoomFocus.Request()
@@ -179,8 +193,8 @@ class CameraFocus(Node):
         """
         max_res = 0  # Best canny sharpness function result obtained
         p_max = 0  # focus position link to max_res
-        min_pos = 0  # minimal focus position reachable
-        max_pos = 0  # maximal focus position reachable
+        self.min_pos = 0  # minimal focus position reachable
+        self.max_pos = 0  # maximal focus position reachable
         low_thresh = 0  # lower noise tolerance threshold
         up_thresh = 0  # upper noise tolerance threshold
         step = 1  # moving step
@@ -188,9 +202,9 @@ class CameraFocus(Node):
         self.eyes_info[eye]['init'] = True
         first = True  # True means first iteration
         stop = 0
-        zoom  = self.eyes_info[eye]['current_zoom']
+        zoom = self.eyes_info[eye]['current_zoom']
         noise = 0.4
-
+        step = 1
         eye_side = eye.split('_')[0]
         time.sleep(1)
 
@@ -209,13 +223,12 @@ class CameraFocus(Node):
 
                     first = True
                     stop = 0
-                    min_pos, max_pos = compute_poses_maxima(zoom)
-                    self.eyes_info[eye]['pos'] = min_pos
+                    self.min_pos, self.max_pos = compute_poses_maxima(zoom)
+                    self.eyes_info[eye]['pos'] = self.min_pos
                     max_res = 0
-                    step = 1
                     self.eyes_info[eye]['init'] = False
 
-                    self.send_request_set_camera_zoom_focus({eye_side: {'focus': min_pos}})
+                    self.send_request_set_camera_zoom_focus({eye_side: {'focus': self.min_pos}})
                     time.sleep(2)
 
                 elif stop == 0:
@@ -227,30 +240,19 @@ class CameraFocus(Node):
                         first = False
                         low_thresh = res - noise
                         up_thresh = res + noise
-                        self.eyes_info[eye]['pos'] = compute_next_pose(min_pos, max_pos, self.eyes_info[eye]['pos'], step)
-                    elif res < low_thresh or self.eyes_info[eye]['pos'] == max_pos:
+                        self.compute_next_pose(eye, step)
+                    elif res < low_thresh or self.eyes_info[eye]['pos'] == self.max_pos:
                         self.eyes_info[eye]['final_pos'] = p_max
                         if (eye == 'left_eye' and self.eyes_info['right_eye']['final_pos'] > - 1) or (eye == 'right_eye' and self.eyes_info['left_eye']['final_pos'] > -1):
                             stop = 1
-                            temp_left = compute_next_pose(
-                                                    min_pos,
-                                                    max_pos,
-                                                    self.eyes_info['left_eye']['final_pos'],
-                                                    -30,
-                                                    )
-                            temp_right = compute_next_pose(
-                                                    min_pos,
-                                                    max_pos,
-                                                    self.eyes_info['right_eye']['final_pos'],
-                                                    -30,
-                                                    )
+                            temp_left = self.compute_next_pose('left_eye', step=-30)
+                            temp_right = self.compute_next_pose('right_eye', step=-30)
                             self.send_request_set_camera_zoom_focus({'left': {'focus': temp_left}, 'right': {'focus': temp_right}})
 
                             time.sleep(0.5)
                             self.send_request_set_camera_zoom_focus({'left': {'focus': self.eyes_info["left_eye"]['final_pos']}, 'right': {'focus': self.eyes_info["right_eye"]['final_pos']}})
                             time.sleep(0.5)
                             self.e_end.set()
-                            
                             self.eyes_info[eye]['pos'] = self.eyes_info[eye]['final_pos']
                             self.eyes_info[eye]['final_pos'] = -1
                             self.e_end.clear()
@@ -265,28 +267,17 @@ class CameraFocus(Node):
                         low_thresh = res - noise
                         up_thresh = res + noise
                         step = 1
-                        self.eyes_info[eye]['pos'] = compute_next_pose(
-                                                    min_pos,
-                                                    max_pos,
-                                                    self.eyes_info[eye]['pos'],
-                                                    step,
-                                                    )
+                        self.compute_next_pose(eye, step)
 
                     else:
                         if step == 1:
                             step = 5
-                        self.eyes_info[eye]['pos'] = compute_next_pose(
-                                                    min_pos,
-                                                    max_pos,
-                                                    self.eyes_info[eye]['pos'],
-                                                    step,
-                                                    )
+                        self.eyes_info[eye]['pos'] = self.compute_next_pose(eye, step)
                     self.send_request_set_camera_zoom_focus({eye.split('_')[0]: {'zoom': zoom, 'focus': self.eyes_info[eye]['pos']}})
                     time.sleep(0.15)
 
             else:
                 time.sleep(0.04)
-
 
     def on_press(self, key):
         """Call after key press event.
@@ -300,7 +291,7 @@ class CameraFocus(Node):
         if str(key) == "'r'":
             print("restart the sequence")
             self.eyes_info['left_eye']['init'] = True
-            self.eyes_info['right_eye']['init'] = True            
+            self.eyes_info['right_eye']['init'] = True
             self.eyes_info['left_eye']['current_zoom'] = -1
             self.eyes_info['right_eye']['current_zoom'] = -1
             if not self.start:
