@@ -1,27 +1,26 @@
 """ROS node asserving both cameras.
 
 cameras will focus on the best global image
-In order to restart the focus algoritm because of zoom or environment changing
-press "r" key
 """
-
-from typing import Dict
-import rclpy
-from rclpy.node import Node
-
-import numpy as np
-
-from sensor_msgs.msg._compressed_image import CompressedImage
-from reachy_msgs.msg import ZoomCommand
-from reachy_msgs.srv import GetCameraZoomFocus, SetCameraZoomFocus
-from reachy_msgs.srv import SetFocusState
-
 import cv2 as cv
 from cv_bridge import CvBridge
 
-import time
-import threading
 from functools import partial
+
+import threading
+import time
+from typing import Dict
+
+import numpy as np
+
+import rclpy
+from rclpy.node import Node
+
+from sensor_msgs.msg._compressed_image import CompressedImage
+
+from reachy_msgs.msg import ZoomCommand
+from reachy_msgs.srv import GetCameraZoomFocus, SetCameraZoomFocus
+from reachy_msgs.srv import SetFocusState
 
 
 def compute_poses_maxima(zoom):
@@ -64,7 +63,7 @@ class CameraFocus(Node):
             },
         }
 
-        self.start = True
+        self.focus_state = False
 
         self.bridge = CvBridge()
 
@@ -95,8 +94,6 @@ class CameraFocus(Node):
             GetCameraZoomFocus,
             'get_camera_zoom_focus',
         )
-
-        time.sleep(5.0) # TODO: check when first image has been recovered instead
 
         self.right_eye_thread = threading.Thread(
             target=self.focusing_algorithm,
@@ -161,8 +158,8 @@ class CameraFocus(Node):
             response.success = False
             return response
 
-        self.start = request.state
-        if self.start:
+        self.focus_state = request.state
+        if self.focus_state:
             self.eyes_info[request.eye]['init'] = True
             self.eyes_info[request.eye]['current_zoom'] = -1
         response.success = True
@@ -212,8 +209,12 @@ class CameraFocus(Node):
         eye_side = eye.split('_')[0]
         time.sleep(1)
 
+        while not self.eyes_info['left_eye']['compressed_img'] and not self.eyes_info['right_eye']['compressed_img']:
+            time.sleep(0.01)
+            continue
+
         while(1):
-            if self.start:
+            if self.focus_state:
                 res = self.canny_sharpness_function(self.eyes_info[eye]['compressed_img'])
 
                 if self.eyes_info[eye]['init']:
@@ -247,25 +248,18 @@ class CameraFocus(Node):
                         self.compute_next_pose(eye, step)
                     elif res < low_thresh or self.eyes_info[eye]['pos'] == self.max_pos:
                         self.eyes_info[eye]['final_pos'] = p_max
-                        if (eye == 'left_eye' and self.eyes_info['right_eye']['final_pos'] > - 1) or (eye == 'right_eye' and self.eyes_info['left_eye']['final_pos'] > -1):
-                            stop = 1
-                            temp_left = self.compute_next_pose('left_eye', step=-30)
-                            temp_right = self.compute_next_pose('right_eye', step=-30)
-                            self.send_request_set_camera_zoom_focus({'left': {'focus': temp_left}, 'right': {'focus': temp_right}})
+                        stop = 1
+                        temp_pose = self.compute_next_pose(eye, step=-30)
+                        self.send_request_set_camera_zoom_focus({eye_side: {'focus': temp_pose}})
 
-                            time.sleep(0.5)
-                            self.send_request_set_camera_zoom_focus({'left': {'focus': self.eyes_info["left_eye"]['final_pos']}, 'right': {'focus': self.eyes_info["right_eye"]['final_pos']}})
-                            time.sleep(0.5)
-                            self.e_end.set()
-                            self.eyes_info[eye]['pos'] = self.eyes_info[eye]['final_pos']
-                            self.eyes_info[eye]['final_pos'] = -1
-                            self.e_end.clear()
-                        else:
-                            self.e_end.wait()
-                            self.eyes_info[eye]['pos'] = self.eyes_info[eye]['final_pos']
-                            self.eyes_info[eye]['final_pos'] = -1
-                            stop = 1
-                        self.start = False
+                        time.sleep(0.5)
+                        self.send_request_set_camera_zoom_focus({eye_side: {'focus': self.eyes_info[eye]['final_pos']}})
+                        time.sleep(0.5)
+                        self.e_end.set()
+                        self.eyes_info[eye]['pos'] = self.eyes_info[eye]['final_pos']
+                        self.eyes_info[eye]['final_pos'] = -1
+                        self.e_end.clear()
+                        self.focus_state = False
 
                     elif res > up_thresh:
                         low_thresh = res - noise
@@ -277,7 +271,7 @@ class CameraFocus(Node):
                         if step == 1:
                             step = 5
                         self.eyes_info[eye]['pos'] = self.compute_next_pose(eye, step)
-                    self.send_request_set_camera_zoom_focus({eye.split('_')[0]: {'zoom': zoom, 'focus': self.eyes_info[eye]['pos']}})
+                    self.send_request_set_camera_zoom_focus({eye_side: {'zoom': zoom, 'focus': self.eyes_info[eye]['pos']}})
                     time.sleep(0.15)
 
             else:
