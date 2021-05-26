@@ -63,7 +63,8 @@ class CameraFocus(Node):
             },
         }
 
-        self.focus_state = False
+        self.left_eye_focus = False
+        self.right_eye_focus = False
 
         self.bridge = CvBridge()
 
@@ -153,15 +154,16 @@ class CameraFocus(Node):
                                 request: SetFocusState.Request,
                                 response: SetFocusState.Response
                                 ) -> SetFocusState.Response:
-        if request.eye not in ['left_eye', 'right_eye']:
-            self._logger.warning("Invalid name sent to focus controller (must be in ('left_eye', 'right_eye')).")
-            response.success = False
-            return response
+        for eye in request.eye:
+            if eye not in ['left_eye', 'right_eye']:
+                self._logger.warning("Invalid name sent to focus controller (must be in ('left_eye', 'right_eye')).")
+                response.success = False
+                return response
 
-        self.focus_state = request.state
-        if self.focus_state:
-            self.eyes_info[request.eye]['init'] = True
-            self.eyes_info[request.eye]['current_zoom'] = -1
+            setattr(self, eye+'_focus', request.state)
+            if request.state:
+                self.eyes_info[eye]['init'] = True
+                self.eyes_info[eye]['current_zoom'] = -1
         response.success = True
         return response
 
@@ -214,7 +216,7 @@ class CameraFocus(Node):
             continue
 
         while(1):
-            if self.focus_state:
+            if getattr(self, eye+'_focus'):
                 res = self.canny_sharpness_function(self.eyes_info[eye]['compressed_img'])
 
                 if self.eyes_info[eye]['init']:
@@ -259,7 +261,7 @@ class CameraFocus(Node):
                         self.eyes_info[eye]['pos'] = self.eyes_info[eye]['final_pos']
                         self.eyes_info[eye]['final_pos'] = -1
                         self.e_end.clear()
-                        self.focus_state = False
+                        setattr(self, eye+'_focus', False)
 
                     elif res > up_thresh:
                         low_thresh = res - noise
