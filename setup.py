@@ -17,13 +17,12 @@ setup(
     install_requires=[
         'setuptools',
         'zoom_kurokesu>=1',
-        'pynput',
     ],
     zip_safe=True,
     maintainer='nuc2',
-    maintainer_email='glannuzel@ensc.fr',
+    maintainer_email='contact@pollen-robotics.com',
     description='ROS2 Auto-focus algorithm for Reachy',
-    license='TODO: License declaration',
+    license='Apache-2.0 License',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
