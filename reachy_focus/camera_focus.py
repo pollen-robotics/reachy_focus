@@ -146,15 +146,18 @@ class CameraFocus(Node):
                                   request: SetFocusState.Request,
                                   response: SetFocusState.Response
                                   ) -> SetFocusState.Response:
-        for eye in request.eye:
+        for eye, state in zip(request.eye, request.state):
             if eye not in ['left_eye', 'right_eye']:
                 self.logger.warning("Invalid name sent to focus controller (must be in ('left_eye', 'right_eye')).")
                 response.success = False
                 return response
-            self.eyes_info[eye]['focus_flag'] = request.state
-            if request.state:
-                self.eyes_info[eye]['init'] = True
+            self.eyes_info[eye]['focus_flag'] = state
+            if state:
+                self.logger.info(f'Starting autofocus on {eye}.')
                 self.eyes_info[eye]['current_zoom'] = -1
+                self.eyes_info[eye]['init'] = True
+            else:
+                self.logger.info(f'Stopping autofocus on {eye}.')
         response.success = True
         return response
 
@@ -178,14 +181,10 @@ class CameraFocus(Node):
         return result
 
     def focusing_algorithm(self, eye):
-        """Endless loop which handle the focus of one camera refered as "eye".
-
-        Cameras focus motors start and stop at once
-        focussing choice are independent
-
+        """Perform autofocus on a given camera.
+        
         Args:
-            eye: camera name, can be 'left_eye' or 'right_eye'
-            im: image position, can be 'left_image' or 'right_image'
+            eye: either 'left_eye' or 'right_eye'.
         """
         max_res = 0  # Best canny sharpness function result obtained
         p_max = 0  # focus position link to max_res
@@ -200,12 +199,14 @@ class CameraFocus(Node):
         step = 1
         eye_side = eye.split('_')[0]
 
-        time.sleep(1.0)
+        time.sleep(2.0)
 
         while not self.eyes_info[eye]['compressed_img']:
             self.logger.info(f"Waiting for an image from /{eye_side}_image...")
             time.sleep(1.0)
             continue
+
+        self.logger.info(f'Autofocus node for {eye} ready!')
 
         while(1):
             if self.eyes_info[eye]['focus_flag']:
@@ -254,6 +255,7 @@ class CameraFocus(Node):
                         self.eyes_info[eye]['final_pos'] = -1
                         self.e_end.clear()
                         self.eyes_info[eye]['focus_flag'] = False
+                        self.logger.info(f'Finished autofocus on {eye}.')
 
                     elif res > up_thresh:
                         low_thresh = res - noise
