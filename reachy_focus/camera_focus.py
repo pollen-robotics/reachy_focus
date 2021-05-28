@@ -89,8 +89,6 @@ class CameraFocus(Node):
             target=self.focusing_algorithm,
             args=('left_eye',),
             daemon=True)
-        self.e_init = threading.Event()
-        self.e_end = threading.Event()
 
         self.right_eye_thread.start()
         self.left_eye_thread.start()
@@ -250,10 +248,8 @@ class CameraFocus(Node):
                         time.sleep(0.5)
                         self.send_request_set_camera_zoom_focus({eye_side: {'focus': self.eyes_info[eye]['final_pos']}})
                         time.sleep(0.5)
-                        self.e_end.set()
                         self.eyes_info[eye]['pos'] = self.eyes_info[eye]['final_pos']
                         self.eyes_info[eye]['final_pos'] = -1
-                        self.e_end.clear()
                         self.eyes_info[eye]['focus_flag'] = False
                         self.logger.info(f'Finished autofocus on {eye}.')
 
