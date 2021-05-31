@@ -24,7 +24,7 @@ class CameraFocus(Node):
     """Handle the autofocus of both reachy cameras in real time."""
 
     def __init__(self):
-        """Set-up variables shared between threads, publishers and clients."""
+        """Set up variables shared between threads, publishers and clients."""
         super().__init__('camera_focus')
 
         self.eyes_info = {
