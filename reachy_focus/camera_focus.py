@@ -180,7 +180,7 @@ class CameraFocus(Node):
 
     def focusing_algorithm(self, eye):
         """Perform autofocus on a given camera.
-        
+
         Args:
             eye: either 'left_eye' or 'right_eye'.
         """
