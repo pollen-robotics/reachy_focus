@@ -197,11 +197,11 @@ class CameraFocus(Node):
         step = 1
         eye_side = eye.split('_')[0]
 
-        time.sleep(5.0)
+        time.sleep(15.0)
 
         while not self.eyes_info[eye]['compressed_img']:
             self.logger.info(f"Waiting for an image from /{eye_side}_image...")
-            time.sleep(15.0)
+            time.sleep(5.0)
             continue
 
         self.logger.info(f'Autofocus node for {eye} ready!')
