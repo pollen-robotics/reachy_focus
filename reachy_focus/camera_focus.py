@@ -144,19 +144,7 @@ class CameraFocus(Node):
                                   request: SetFocusState.Request,
                                   response: SetFocusState.Response
                                   ) -> SetFocusState.Response:
-        for eye, state in zip(request.eye, request.state):
-            if eye not in ['left_eye', 'right_eye']:
-                self.logger.warning("Invalid name sent to focus controller (must be in ('left_eye', 'right_eye')).")
-                response.success = False
-                return response
-            self.eyes_info[eye]['focus_flag'] = state
-            if state:
-                self.logger.info(f'Starting autofocus on {eye}.')
-                self.eyes_info[eye]['current_zoom'] = -1
-                self.eyes_info[eye]['init'] = True
-            else:
-                self.logger.info(f'Stopping autofocus on {eye}.')
-        response.success = True
+        response.success = False
         return response
 
     def send_request_set_camera_zoom_focus(self, command: Dict):
